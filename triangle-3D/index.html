@@ -102,6 +102,39 @@ gl.enableVertexAttribArray(aPosition);
 gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
 
 const uAngle = gl.getUniformLocation(program, "uAngle");
+let rotationAngle = 0;
+let isDragging = false;
+let lastPointerX = 0;
+
+canvas.addEventListener("pointerdown", (event) => {
+  isDragging = true;
+  lastPointerX = event.clientX;
+  canvas.setPointerCapture(event.pointerId);
+});
+
+canvas.addEventListener("pointermove", (event) => {
+  if (!isDragging) {
+    return;
+  }
+
+  const deltaX = event.clientX - lastPointerX;
+  rotationAngle += deltaX * 0.01;
+  lastPointerX = event.clientX;
+});
+
+function stopDragging(event) {
+  if (!isDragging) {
+    return;
+  }
+
+  isDragging = false;
+  if (canvas.hasPointerCapture(event.pointerId)) {
+    canvas.releasePointerCapture(event.pointerId);
+  }
+}
+
+canvas.addEventListener("pointerup", stopDragging);
+canvas.addEventListener("pointercancel", stopDragging);
 
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -115,14 +148,13 @@ function resize() {
   }
 }
 
-function render(timeMs) {
+function render() {
   resize();
 
-  const angle = timeMs * 0.001;
   gl.clearColor(0.04, 0.06, 0.12, 1.0);
   gl.clear(gl.COLOR_BUFFER_BIT);
 
-  gl.uniform1f(uAngle, angle);
+  gl.uniform1f(uAngle, rotationAngle);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   requestAnimationFrame(render);
