@@ -16,6 +16,12 @@
       display: block;
       width: 100%;
       height: 100%;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    canvas.dragging {
+      cursor: grabbing;
     }
   </style>
 </head>
@@ -62,53 +68,117 @@ function createProgram(glContext, vertexSource, fragmentSource) {
 }
 
 const vertexShaderSource = `
-attribute vec2 aPosition;
-uniform float uAngle;
+attribute vec3 aPosition;
+uniform vec2 uRotation;
+uniform float uAspect;
 
 void main() {
-  float c = cos(uAngle);
-  float s = sin(uAngle);
-  vec2 rotated = vec2(
-    aPosition.x * c - aPosition.y * s,
-    aPosition.x * s + aPosition.y * c
+  float cosY = cos(uRotation.y);
+  float sinY = sin(uRotation.y);
+  vec3 rotatedY = vec3(
+    aPosition.x * cosY + aPosition.z * sinY,
+    aPosition.y,
+    -aPosition.x * sinY + aPosition.z * cosY
   );
-  gl_Position = vec4(rotated, 0.0, 1.0);
+
+  float cosX = cos(uRotation.x);
+  float sinX = sin(uRotation.x);
+  vec3 rotated = vec3(
+    rotatedY.x,
+    rotatedY.y * cosX - rotatedY.z * sinX,
+    rotatedY.y * sinX + rotatedY.z * cosX
+  );
+
+  float distance = 2.5;
+  float perspective = 1.6 / (distance - rotated.z);
+  vec2 projected = vec2(
+    rotated.x * perspective / uAspect,
+    rotated.y * perspective
+  );
+
+  gl_Position = vec4(projected, 0.0, 1.0);
 }
 `;
 
 const fragmentShaderSource = `
 precision mediump float;
+uniform vec4 uColor;
 
 void main() {
-  gl_FragColor = vec4(0.0, 1.0, 0.8, 1.0);
+  gl_FragColor = uColor;
 }
 `;
 
 const program = createProgram(gl, vertexShaderSource, fragmentShaderSource);
 gl.useProgram(program);
 
-const vertices = new Float32Array([
-   0.0,  0.75,
-  -0.75, -0.75,
-   0.75, -0.75
-]);
+const trianglePoints = [
+  [0.0, 0.85, 0.0],
+  [-0.8, -0.65, 0.0],
+  [0.8, -0.65, 0.0]
+];
 
-const buffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+function subtractVectors(a, b) {
+  return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+}
+
+function crossProduct(a, b) {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0]
+  ];
+}
+
+function normalize(vector) {
+  const length = Math.hypot(vector[0], vector[1], vector[2]);
+  return vector.map((value) => value / length);
+}
+
+const triangleVertices = new Float32Array(trianglePoints.flat());
+const centroid = trianglePoints.reduce(
+  (sum, point) => [sum[0] + point[0], sum[1] + point[1], sum[2] + point[2]],
+  [0, 0, 0]
+).map((value) => value / 3);
+const faceNormal = normalize(
+  crossProduct(
+    subtractVectors(trianglePoints[1], trianglePoints[0]),
+    subtractVectors(trianglePoints[2], trianglePoints[0])
+  )
+);
+const normalLength = 0.65;
+const normalTip = [
+  centroid[0] + faceNormal[0] * normalLength,
+  centroid[1] + faceNormal[1] * normalLength,
+  centroid[2] + faceNormal[2] * normalLength
+];
+const normalVertices = new Float32Array([...centroid, ...normalTip]);
+
+const triangleBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, triangleBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, triangleVertices, gl.STATIC_DRAW);
+
+const normalBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+gl.bufferData(gl.ARRAY_BUFFER, normalVertices, gl.STATIC_DRAW);
 
 const aPosition = gl.getAttribLocation(program, "aPosition");
 gl.enableVertexAttribArray(aPosition);
-gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
 
-const uAngle = gl.getUniformLocation(program, "uAngle");
-let rotationAngle = 0;
+const uRotation = gl.getUniformLocation(program, "uRotation");
+const uAspect = gl.getUniformLocation(program, "uAspect");
+const uColor = gl.getUniformLocation(program, "uColor");
+let rotationX = -0.45;
+let rotationY = 0.45;
 let isDragging = false;
 let lastPointerX = 0;
+let lastPointerY = 0;
 
 canvas.addEventListener("pointerdown", (event) => {
   isDragging = true;
   lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
+  canvas.classList.add("dragging");
   canvas.setPointerCapture(event.pointerId);
 });
 
@@ -118,8 +188,12 @@ canvas.addEventListener("pointermove", (event) => {
   }
 
   const deltaX = event.clientX - lastPointerX;
-  rotationAngle += deltaX * 0.01;
+  const deltaY = event.clientY - lastPointerY;
+  rotationY += deltaX * 0.01;
+  rotationX += deltaY * 0.01;
+  rotationX = Math.max(-1.4, Math.min(1.4, rotationX));
   lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
 });
 
 function stopDragging(event) {
@@ -128,6 +202,7 @@ function stopDragging(event) {
   }
 
   isDragging = false;
+  canvas.classList.remove("dragging");
   if (canvas.hasPointerCapture(event.pointerId)) {
     canvas.releasePointerCapture(event.pointerId);
   }
@@ -154,8 +229,18 @@ function render() {
   gl.clearColor(0.04, 0.06, 0.12, 1.0);
   gl.clear(gl.COLOR_BUFFER_BIT);
 
-  gl.uniform1f(uAngle, rotationAngle);
+  gl.uniform2f(uRotation, rotationX, rotationY);
+  gl.uniform1f(uAspect, canvas.width / canvas.height);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, triangleBuffer);
+  gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+  gl.uniform4f(uColor, 0.0, 1.0, 0.8, 1.0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+  gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+  gl.uniform4f(uColor, 1.0, 0.45, 0.2, 1.0);
+  gl.drawArrays(gl.LINES, 0, 2);
 
   requestAnimationFrame(render);
 }
