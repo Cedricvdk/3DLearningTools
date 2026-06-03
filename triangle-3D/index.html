@@ -23,12 +23,40 @@
     canvas.dragging {
       cursor: grabbing;
     }
+
+    .controls {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 999px;
+      background: rgba(11, 16, 32, 0.78);
+      color: #e6edf7;
+      font: 600 14px/1.2 "Segoe UI", sans-serif;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      user-select: none;
+    }
+
+    .controls input {
+      margin: 0;
+      accent-color: #ff7340;
+    }
   </style>
 </head>
 <body>
+<label class="controls">
+  <input id="toggle-normal" type="checkbox" checked>
+  Show normal
+</label>
 <script>
 const canvas = document.createElement("canvas");
 document.body.appendChild(canvas);
+const normalToggle = document.getElementById("toggle-normal");
 
 const gl = canvas.getContext("webgl");
 if (!gl) {
@@ -173,6 +201,11 @@ let rotationY = 0.45;
 let isDragging = false;
 let lastPointerX = 0;
 let lastPointerY = 0;
+let showNormal = normalToggle.checked;
+
+normalToggle.addEventListener("change", () => {
+  showNormal = normalToggle.checked;
+});
 
 canvas.addEventListener("pointerdown", (event) => {
   isDragging = true;
@@ -237,10 +270,12 @@ function render() {
   gl.uniform4f(uColor, 0.0, 1.0, 0.8, 1.0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
-  gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
-  gl.uniform4f(uColor, 1.0, 0.45, 0.2, 1.0);
-  gl.drawArrays(gl.LINES, 0, 2);
+  if (showNormal) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, normalBuffer);
+    gl.vertexAttribPointer(aPosition, 3, gl.FLOAT, false, 0, 0);
+    gl.uniform4f(uColor, 1.0, 0.45, 0.2, 1.0);
+    gl.drawArrays(gl.LINES, 0, 2);
+  }
 
   requestAnimationFrame(render);
 }
