@@ -1,0 +1,1129 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Geovanni OBJ Viewer</title>
+		<style>
+			:root {
+				--bg-0: #0b1220;
+				--bg-1: #16233b;
+				--panel: rgba(7, 12, 22, 0.75);
+				--text: #eef3ff;
+				--accent: #66e3ff;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			html,
+			body {
+				margin: 0;
+				width: 100%;
+				height: 100%;
+				overflow: hidden;
+				font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+				color: var(--text);
+				background: radial-gradient(circle at 20% 20%, #203456 0%, var(--bg-0) 45%),
+					linear-gradient(145deg, var(--bg-0), var(--bg-1));
+			}
+
+			#app {
+				position: relative;
+				width: 100%;
+				height: 100%;
+			}
+
+			#glcanvas {
+				width: 100%;
+				height: 100%;
+				display: block;
+			}
+
+			.hud {
+				position: absolute;
+				left: 16px;
+				top: 16px;
+				padding: 12px 14px;
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				border-radius: 12px;
+				background: var(--panel);
+				backdrop-filter: blur(4px);
+				font-size: 14px;
+				line-height: 1.5;
+				max-width: min(92vw, 460px);
+				pointer-events: none;
+			}
+
+			.hud b {
+				color: var(--accent);
+			}
+
+			.status {
+				margin-top: 6px;
+				opacity: 0.9;
+			}
+
+			.menu {
+				position: absolute;
+				right: 16px;
+				top: 16px;
+				width: min(280px, 86vw);
+				padding: 12px 14px;
+				border: 1px solid rgba(255, 255, 255, 0.15);
+				border-radius: 12px;
+				background: var(--panel);
+				backdrop-filter: blur(4px);
+				font-size: 14px;
+			}
+
+			.menu h2 {
+				margin: 0 0 10px;
+				font-size: 14px;
+				letter-spacing: 0.06em;
+				text-transform: uppercase;
+				color: var(--accent);
+			}
+
+			.control {
+				display: grid;
+				gap: 6px;
+				margin-bottom: 12px;
+			}
+
+			.control:last-child {
+				margin-bottom: 0;
+			}
+
+			.control label {
+				font-weight: 600;
+			}
+
+			.menu input,
+			.menu select {
+				width: 100%;
+				border-radius: 8px;
+				border: 1px solid rgba(255, 255, 255, 0.25);
+				background: rgba(8, 16, 30, 0.85);
+				color: var(--text);
+				padding: 6px 8px;
+			}
+
+			.value-row {
+				display: flex;
+				justify-content: space-between;
+				opacity: 0.9;
+			}
+
+			.checkbox-row {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+
+			.menu input[type="checkbox"] {
+				width: auto;
+				margin: 0;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="app">
+			<canvas id="glcanvas"></canvas>
+			<div class="hud">
+				<div><b>Controls:</b> left click + drag to rotate, mouse wheel to zoom.</div>
+				<div class="status" id="status">Loading geovanni.obj...</div>
+			</div>
+			<div class="menu" aria-label="Viewer controls">
+				<h2>Menu</h2>
+				<div class="control">
+					<label for="objectSelect">Object</label>
+					<select id="objectSelect"></select>
+				</div>
+				<div class="control">
+					<label for="lightYaw">Light Y rotation</label>
+					<input id="lightYaw" type="range" min="0" max="360" step="1" value="230" />
+					<div class="value-row">
+						<span>Degrees</span>
+						<span id="lightYawValue">230°</span>
+					</div>
+				</div>
+				<div class="control">
+					<label for="lightPitch">Light X rotation</label>
+					<input id="lightPitch" type="range" min="0" max="360" step="1" value="20" />
+					<div class="value-row">
+						<span>Degrees</span>
+						<span id="lightPitchValue">20°</span>
+					</div>
+				</div>
+				<div class="control">
+					<label for="shadingSelect">Shading</label>
+					<select id="shadingSelect">
+						<option value="flat">flat</option>
+						<option value="lit" selected>lit</option>
+						<option value="triangle">triangle</option>
+					</select>
+				</div>
+				<div class="control">
+					<div class="checkbox-row">
+						<input id="showLight" type="checkbox" />
+						<label for="showLight">Show light</label>
+					</div>
+				</div>
+				<div class="control">
+					<div class="checkbox-row">
+						<input id="showVertexNormals" type="checkbox" />
+						<label for="showVertexNormals">Draw vertex normals</label>
+					</div>
+				</div>
+				<div class="control">
+					<div class="checkbox-row">
+						<input id="showFaceNormals" type="checkbox" />
+						<label for="showFaceNormals">Draw face normals</label>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<script>
+			const canvas = document.getElementById("glcanvas");
+			const statusEl = document.getElementById("status");
+			const objectSelectEl = document.getElementById("objectSelect");
+			const lightYawEl = document.getElementById("lightYaw");
+			const lightYawValueEl = document.getElementById("lightYawValue");
+			const lightPitchEl = document.getElementById("lightPitch");
+			const lightPitchValueEl = document.getElementById("lightPitchValue");
+			const shadingSelectEl = document.getElementById("shadingSelect");
+			const showLightEl = document.getElementById("showLight");
+			const showVertexNormalsEl = document.getElementById("showVertexNormals");
+			const showFaceNormalsEl = document.getElementById("showFaceNormals");
+			const gl = canvas.getContext("webgl", { antialias: true, alpha: false });
+			const fallbackObjFiles = ["geovanni.obj", "high poly suzanne.obj", "low poly suzanne.obj"];
+
+			if (!gl) {
+				statusEl.textContent = "WebGL is not supported in this browser.";
+				throw new Error("WebGL unavailable");
+			}
+
+			const vertexShaderSource = `
+				attribute vec3 aPosition;
+				attribute vec3 aNormal;
+				attribute vec3 aTriColor;
+
+				uniform mat4 uModel;
+				uniform mat4 uView;
+				uniform mat4 uProj;
+
+				varying vec3 vNormal;
+				varying vec3 vWorldPos;
+				varying vec3 vTriColor;
+
+				void main() {
+					vec4 worldPos = uModel * vec4(aPosition, 1.0);
+					vWorldPos = worldPos.xyz;
+					vNormal = mat3(uModel) * aNormal;
+					vTriColor = aTriColor;
+					gl_Position = uProj * uView * worldPos;
+				}
+			`;
+
+			const fragmentShaderSource = `
+				precision mediump float;
+
+				varying vec3 vNormal;
+				varying vec3 vWorldPos;
+				varying vec3 vTriColor;
+
+				uniform vec3 uLightDir;
+				uniform vec3 uColor;
+				uniform float uShadingMode;
+
+				void main() {
+					if (uShadingMode < 0.5) {
+						gl_FragColor = vec4(uColor, 1.0);
+						return;
+					}
+
+					if (uShadingMode > 1.5) {
+						gl_FragColor = vec4(vTriColor, 1.0);
+						return;
+					}
+
+					vec3 n = normalize(vNormal);
+					float diffuse = max(dot(n, normalize(-uLightDir)), 0.0);
+					float ambient = 0.26;
+					float lighting = ambient + diffuse * 0.74;
+
+					vec3 viewDir = normalize(-vWorldPos);
+					vec3 halfDir = normalize(normalize(-uLightDir) + viewDir);
+					float spec = pow(max(dot(n, halfDir), 0.0), 28.0) * 0.3;
+
+					vec3 finalColor = uColor * lighting + spec;
+					gl_FragColor = vec4(finalColor, 1.0);
+				}
+			`;
+
+			const lineVertexShaderSource = `
+				attribute vec3 aPosition;
+
+				uniform mat4 uModel;
+				uniform mat4 uView;
+				uniform mat4 uProj;
+
+				void main() {
+					gl_Position = uProj * uView * uModel * vec4(aPosition, 1.0);
+				}
+			`;
+
+			const lineFragmentShaderSource = `
+				precision mediump float;
+
+				uniform vec3 uLineColor;
+
+				void main() {
+					gl_FragColor = vec4(uLineColor, 1.0);
+				}
+			`;
+
+			function compileShader(glCtx, type, source) {
+				const shader = glCtx.createShader(type);
+				glCtx.shaderSource(shader, source);
+				glCtx.compileShader(shader);
+				if (!glCtx.getShaderParameter(shader, glCtx.COMPILE_STATUS)) {
+					const msg = glCtx.getShaderInfoLog(shader);
+					glCtx.deleteShader(shader);
+					throw new Error("Shader compile error: " + msg);
+				}
+				return shader;
+			}
+
+			function createProgram(glCtx, vsSource, fsSource) {
+				const program = glCtx.createProgram();
+				const vs = compileShader(glCtx, glCtx.VERTEX_SHADER, vsSource);
+				const fs = compileShader(glCtx, glCtx.FRAGMENT_SHADER, fsSource);
+				glCtx.attachShader(program, vs);
+				glCtx.attachShader(program, fs);
+				glCtx.linkProgram(program);
+				if (!glCtx.getProgramParameter(program, glCtx.LINK_STATUS)) {
+					const msg = glCtx.getProgramInfoLog(program);
+					throw new Error("Program link error: " + msg);
+				}
+				return program;
+			}
+
+			function parseOBJ(objText) {
+				const positionsRaw = [];
+				const normalsRaw = [];
+
+				const outPositions = [];
+				const outNormals = [];
+
+				const lines = objText.split(/\r?\n/);
+
+				for (const lineRaw of lines) {
+					const line = lineRaw.trim();
+					if (!line || line.startsWith("#")) {
+						continue;
+					}
+
+					const parts = line.split(/\s+/);
+					const type = parts[0];
+
+					if (type === "v") {
+						positionsRaw.push([
+							parseFloat(parts[1]),
+							parseFloat(parts[2]),
+							parseFloat(parts[3])
+						]);
+						continue;
+					}
+
+					if (type === "vn") {
+						normalsRaw.push([
+							parseFloat(parts[1]),
+							parseFloat(parts[2]),
+							parseFloat(parts[3])
+						]);
+						continue;
+					}
+
+					if (type !== "f") {
+						continue;
+					}
+
+					const faceVerts = parts.slice(1);
+					if (faceVerts.length < 3) {
+						continue;
+					}
+
+					for (let i = 1; i < faceVerts.length - 1; i += 1) {
+						const tri = [faceVerts[0], faceVerts[i], faceVerts[i + 1]];
+						for (const token of tri) {
+							const fields = token.split("/");
+							const vIndex = parseInt(fields[0], 10) - 1;
+							const nIndex = fields[2] ? parseInt(fields[2], 10) - 1 : -1;
+
+							const p = positionsRaw[vIndex];
+							outPositions.push(p[0], p[1], p[2]);
+
+							if (nIndex >= 0 && normalsRaw[nIndex]) {
+								const n = normalsRaw[nIndex];
+								outNormals.push(n[0], n[1], n[2]);
+							} else {
+								outNormals.push(0, 0, 0);
+							}
+						}
+					}
+				}
+
+				// If normals are missing, build flat normals per triangle.
+				let hasAnyNormal = false;
+				for (let i = 0; i < outNormals.length; i += 3) {
+					if (outNormals[i] !== 0 || outNormals[i + 1] !== 0 || outNormals[i + 2] !== 0) {
+						hasAnyNormal = true;
+						break;
+					}
+				}
+
+				if (!hasAnyNormal) {
+					for (let i = 0; i < outPositions.length; i += 9) {
+						const ax = outPositions[i];
+						const ay = outPositions[i + 1];
+						const az = outPositions[i + 2];
+						const bx = outPositions[i + 3];
+						const by = outPositions[i + 4];
+						const bz = outPositions[i + 5];
+						const cx = outPositions[i + 6];
+						const cy = outPositions[i + 7];
+						const cz = outPositions[i + 8];
+
+						const abx = bx - ax;
+						const aby = by - ay;
+						const abz = bz - az;
+						const acx = cx - ax;
+						const acy = cy - ay;
+						const acz = cz - az;
+
+						const nx = aby * acz - abz * acy;
+						const ny = abz * acx - abx * acz;
+						const nz = abx * acy - aby * acx;
+						const invLen = 1 / Math.max(Math.hypot(nx, ny, nz), 1e-8);
+						const fnx = nx * invLen;
+						const fny = ny * invLen;
+						const fnz = nz * invLen;
+
+						for (let j = 0; j < 3; j += 1) {
+							const ni = i + j * 3;
+							outNormals[ni] = fnx;
+							outNormals[ni + 1] = fny;
+							outNormals[ni + 2] = fnz;
+						}
+					}
+				}
+
+				return {
+					positions: new Float32Array(outPositions),
+					normals: new Float32Array(outNormals)
+				};
+			}
+
+			function normalizeModel(positions) {
+				let minX = Infinity;
+				let minY = Infinity;
+				let minZ = Infinity;
+				let maxX = -Infinity;
+				let maxY = -Infinity;
+				let maxZ = -Infinity;
+
+				for (let i = 0; i < positions.length; i += 3) {
+					const x = positions[i];
+					const y = positions[i + 1];
+					const z = positions[i + 2];
+					minX = Math.min(minX, x);
+					minY = Math.min(minY, y);
+					minZ = Math.min(minZ, z);
+					maxX = Math.max(maxX, x);
+					maxY = Math.max(maxY, y);
+					maxZ = Math.max(maxZ, z);
+				}
+
+				const cx = (minX + maxX) * 0.5;
+				const cy = (minY + maxY) * 0.5;
+				const cz = (minZ + maxZ) * 0.5;
+
+				const sx = maxX - minX;
+				const sy = maxY - minY;
+				const sz = maxZ - minZ;
+				const maxSize = Math.max(sx, sy, sz, 1e-8);
+				const scale = 2.0 / maxSize;
+
+				for (let i = 0; i < positions.length; i += 3) {
+					positions[i] = (positions[i] - cx) * scale;
+					positions[i + 1] = (positions[i + 1] - cy) * scale;
+					positions[i + 2] = (positions[i + 2] - cz) * scale;
+				}
+			}
+
+			function buildNormalLineVertices(positions, normals, lengthScale) {
+				const out = new Float32Array((positions.length / 3) * 6);
+				let dst = 0;
+				for (let i = 0; i < positions.length; i += 3) {
+					const px = positions[i];
+					const py = positions[i + 1];
+					const pz = positions[i + 2];
+					const nx = normals[i];
+					const ny = normals[i + 1];
+					const nz = normals[i + 2];
+					const invLen = 1 / Math.max(Math.hypot(nx, ny, nz), 1e-8);
+					const nnx = nx * invLen;
+					const nny = ny * invLen;
+					const nnz = nz * invLen;
+
+					out[dst] = px;
+					out[dst + 1] = py;
+					out[dst + 2] = pz;
+					out[dst + 3] = px + nnx * lengthScale;
+					out[dst + 4] = py + nny * lengthScale;
+					out[dst + 5] = pz + nnz * lengthScale;
+					dst += 6;
+				}
+				return out;
+			}
+
+			function buildFaceNormalLineVertices(positions, lengthScale) {
+				const triCount = Math.floor(positions.length / 9);
+				const out = new Float32Array(triCount * 6);
+				let dst = 0;
+				for (let i = 0; i < triCount; i += 1) {
+					const p = i * 9;
+					const ax = positions[p];
+					const ay = positions[p + 1];
+					const az = positions[p + 2];
+					const bx = positions[p + 3];
+					const by = positions[p + 4];
+					const bz = positions[p + 5];
+					const cx = positions[p + 6];
+					const cy = positions[p + 7];
+					const cz = positions[p + 8];
+
+					const abx = bx - ax;
+					const aby = by - ay;
+					const abz = bz - az;
+					const acx = cx - ax;
+					const acy = cy - ay;
+					const acz = cz - az;
+
+					const nx = aby * acz - abz * acy;
+					const ny = abz * acx - abx * acz;
+					const nz = abx * acy - aby * acx;
+					const invLen = 1 / Math.max(Math.hypot(nx, ny, nz), 1e-8);
+
+					const centerX = (ax + bx + cx) / 3;
+					const centerY = (ay + by + cy) / 3;
+					const centerZ = (az + bz + cz) / 3;
+
+					out[dst] = centerX;
+					out[dst + 1] = centerY;
+					out[dst + 2] = centerZ;
+					out[dst + 3] = centerX + nx * invLen * lengthScale;
+					out[dst + 4] = centerY + ny * invLen * lengthScale;
+					out[dst + 5] = centerZ + nz * invLen * lengthScale;
+					dst += 6;
+				}
+				return out;
+			}
+
+			function buildTriangleColors(positions) {
+				const triCount = Math.floor(positions.length / 9);
+				const out = new Float32Array((positions.length / 3) * 3);
+				for (let i = 0; i < triCount; i += 1) {
+					const r = 0.25 + Math.random() * 0.75;
+					const g = 0.25 + Math.random() * 0.75;
+					const b = 0.25 + Math.random() * 0.75;
+					const base = i * 9;
+					for (let j = 0; j < 3; j += 1) {
+						out[base + j * 3] = r;
+						out[base + j * 3 + 1] = g;
+						out[base + j * 3 + 2] = b;
+					}
+				}
+				return out;
+			}
+
+			function buildLightGizmoVertices(lightDir) {
+				const radius = 1.35;
+				const segments = 72;
+				const lineVerts = [];
+
+				function addLine(x0, y0, z0, x1, y1, z1) {
+					lineVerts.push(x0, y0, z0, x1, y1, z1);
+				}
+
+				for (let i = 0; i < segments; i += 1) {
+					const a0 = (i / segments) * Math.PI * 2;
+					const a1 = ((i + 1) / segments) * Math.PI * 2;
+					const c0 = Math.cos(a0);
+					const s0 = Math.sin(a0);
+					const c1 = Math.cos(a1);
+					const s1 = Math.sin(a1);
+
+					// XY ring
+					addLine(radius * c0, radius * s0, 0, radius * c1, radius * s1, 0);
+					// YZ ring
+					addLine(0, radius * c0, radius * s0, 0, radius * c1, radius * s1);
+					// XZ ring
+					addLine(radius * c0, 0, radius * s0, radius * c1, 0, radius * s1);
+				}
+
+				const lx = lightDir[0];
+				const ly = lightDir[1];
+				const lz = lightDir[2];
+				const len = Math.max(Math.hypot(lx, ly, lz), 1e-8);
+				const nx = lx / len;
+				const ny = ly / len;
+				const nz = lz / len;
+				const tipX = nx * radius;
+				const tipY = ny * radius;
+				const tipZ = nz * radius;
+
+				// Direction ray points from object center toward light source.
+				addLine(0, 0, 0, tipX, tipY, tipZ);
+
+				const helperX = Math.abs(ny) < 0.95 ? 0 : 1;
+				const helperY = Math.abs(ny) < 0.95 ? 1 : 0;
+				const helperZ = 0;
+				const sx = ny * helperZ - nz * helperY;
+				const sy = nz * helperX - nx * helperZ;
+				const sz = nx * helperY - ny * helperX;
+				const sLen = Math.max(Math.hypot(sx, sy, sz), 1e-8);
+				const ux = sx / sLen;
+				const uy = sy / sLen;
+				const uz = sz / sLen;
+				const vx = ny * uz - nz * uy;
+				const vy = nz * ux - nx * uz;
+				const vz = nx * uy - ny * ux;
+
+				const arrowLen = 0.14;
+				const side = 0.08;
+				const baseX = tipX - nx * arrowLen;
+				const baseY = tipY - ny * arrowLen;
+				const baseZ = tipZ - nz * arrowLen;
+				addLine(tipX, tipY, tipZ, baseX + ux * side, baseY + uy * side, baseZ + uz * side);
+				addLine(tipX, tipY, tipZ, baseX - ux * side, baseY - uy * side, baseZ - uz * side);
+				addLine(tipX, tipY, tipZ, baseX + vx * side, baseY + vy * side, baseZ + vz * side);
+				addLine(tipX, tipY, tipZ, baseX - vx * side, baseY - vy * side, baseZ - vz * side);
+
+				return new Float32Array(lineVerts);
+			}
+
+			function mat4Identity(out) {
+				out[0] = 1;
+				out[1] = 0;
+				out[2] = 0;
+				out[3] = 0;
+				out[4] = 0;
+				out[5] = 1;
+				out[6] = 0;
+				out[7] = 0;
+				out[8] = 0;
+				out[9] = 0;
+				out[10] = 1;
+				out[11] = 0;
+				out[12] = 0;
+				out[13] = 0;
+				out[14] = 0;
+				out[15] = 1;
+				return out;
+			}
+
+			function mat4Multiply(out, a, b) {
+				const o = new Float32Array(16);
+				for (let c = 0; c < 4; c += 1) {
+					for (let r = 0; r < 4; r += 1) {
+						o[c * 4 + r] =
+							a[r] * b[c * 4] +
+							a[4 + r] * b[c * 4 + 1] +
+							a[8 + r] * b[c * 4 + 2] +
+							a[12 + r] * b[c * 4 + 3];
+					}
+				}
+				out.set(o);
+				return out;
+			}
+
+			function mat4Perspective(out, fovy, aspect, near, far) {
+				const f = 1 / Math.tan(fovy / 2);
+				out[0] = f / aspect;
+				out[1] = 0;
+				out[2] = 0;
+				out[3] = 0;
+				out[4] = 0;
+				out[5] = f;
+				out[6] = 0;
+				out[7] = 0;
+				out[8] = 0;
+				out[9] = 0;
+				out[10] = (far + near) / (near - far);
+				out[11] = -1;
+				out[12] = 0;
+				out[13] = 0;
+				out[14] = (2 * far * near) / (near - far);
+				out[15] = 0;
+				return out;
+			}
+
+			function mat4Translate(out, tx, ty, tz) {
+				mat4Identity(out);
+				out[12] = tx;
+				out[13] = ty;
+				out[14] = tz;
+				return out;
+			}
+
+			function mat4RotateX(out, angle) {
+				const c = Math.cos(angle);
+				const s = Math.sin(angle);
+				mat4Identity(out);
+				out[5] = c;
+				out[6] = s;
+				out[9] = -s;
+				out[10] = c;
+				return out;
+			}
+
+			function mat4RotateY(out, angle) {
+				const c = Math.cos(angle);
+				const s = Math.sin(angle);
+				mat4Identity(out);
+				out[0] = c;
+				out[2] = -s;
+				out[8] = s;
+				out[10] = c;
+				return out;
+			}
+
+			function mat4FromAxisAngle(out, axisX, axisY, axisZ, angle) {
+				const c = Math.cos(angle);
+				const s = Math.sin(angle);
+				const t = 1 - c;
+
+				out[0] = t * axisX * axisX + c;
+				out[1] = t * axisX * axisY + s * axisZ;
+				out[2] = t * axisX * axisZ - s * axisY;
+				out[3] = 0;
+				out[4] = t * axisX * axisY - s * axisZ;
+				out[5] = t * axisY * axisY + c;
+				out[6] = t * axisY * axisZ + s * axisX;
+				out[7] = 0;
+				out[8] = t * axisX * axisZ + s * axisY;
+				out[9] = t * axisY * axisZ - s * axisX;
+				out[10] = t * axisZ * axisZ + c;
+				out[11] = 0;
+				out[12] = 0;
+				out[13] = 0;
+				out[14] = 0;
+				out[15] = 1;
+				return out;
+			}
+
+			function projectToArcball(clientX, clientY) {
+				const rect = canvas.getBoundingClientRect();
+				if (rect.width <= 0 || rect.height <= 0) {
+					return [0, 0, 1];
+				}
+
+				let x = (2 * (clientX - rect.left) - rect.width) / rect.width;
+				let y = (rect.height - 2 * (clientY - rect.top)) / rect.height;
+				const r2 = x * x + y * y;
+				let z = 0;
+
+				if (r2 <= 1) {
+					z = Math.sqrt(1 - r2);
+				} else {
+					const invLen = 1 / Math.sqrt(r2);
+					x *= invLen;
+					y *= invLen;
+				}
+
+				const invVLen = 1 / Math.max(Math.hypot(x, y, z), 1e-8);
+				return [x * invVLen, y * invVLen, z * invVLen];
+			}
+
+			function resizeCanvas() {
+				const dpr = Math.max(window.devicePixelRatio || 1, 1);
+				const w = Math.floor(canvas.clientWidth * dpr);
+				const h = Math.floor(canvas.clientHeight * dpr);
+				if (canvas.width !== w || canvas.height !== h) {
+					canvas.width = w;
+					canvas.height = h;
+				}
+				gl.viewport(0, 0, canvas.width, canvas.height);
+			}
+
+			const state = {
+				rotating: false,
+				arcballPrev: [0, 0, 1],
+				zoom: 3.2,
+				lightYawDeg: 230,
+				lightPitchDeg: 20,
+				shadingMode: "lit",
+				showLight: false,
+				showVertexNormals: false,
+				showFaceNormals: false,
+				currentObject: "geovanni.obj",
+				availableObjects: [],
+				vertexCount: 0,
+				vertexNormalLineCount: 0,
+				faceNormalLineCount: 0,
+				modelRotation: new Float32Array(16),
+				positionBuffer: null,
+				normalBuffer: null,
+				triColorBuffer: null,
+				lightGizmoBuffer: null,
+				lightGizmoCount: 0,
+				vertexNormalLineBuffer: null,
+				faceNormalLineBuffer: null
+			};
+
+			canvas.addEventListener("mousedown", (event) => {
+				if (event.button !== 0) {
+					return;
+				}
+				state.rotating = true;
+				state.arcballPrev = projectToArcball(event.clientX, event.clientY);
+			});
+
+			window.addEventListener("mouseup", () => {
+				state.rotating = false;
+			});
+
+			window.addEventListener("mousemove", (event) => {
+				if (!state.rotating) {
+					return;
+				}
+				const curr = projectToArcball(event.clientX, event.clientY);
+				const prev = state.arcballPrev;
+
+				const axisX = prev[1] * curr[2] - prev[2] * curr[1];
+				const axisY = prev[2] * curr[0] - prev[0] * curr[2];
+				const axisZ = prev[0] * curr[1] - prev[1] * curr[0];
+				const axisLen = Math.hypot(axisX, axisY, axisZ);
+
+				if (axisLen > 1e-6) {
+					const axisInvLen = 1 / axisLen;
+					const nx = axisX * axisInvLen;
+					const ny = axisY * axisInvLen;
+					const nz = axisZ * axisInvLen;
+					const dot = Math.max(-1, Math.min(1, prev[0] * curr[0] + prev[1] * curr[1] + prev[2] * curr[2]));
+					const angle = Math.acos(dot);
+					if (angle > 1e-6) {
+						mat4FromAxisAngle(matRotX, nx, ny, nz, angle * 4.05);
+						mat4Multiply(matTemp, matRotX, state.modelRotation);
+						state.modelRotation.set(matTemp);
+					}
+				}
+
+				state.arcballPrev = curr;
+			});
+
+			canvas.addEventListener(
+				"wheel",
+				(event) => {
+					event.preventDefault();
+					state.zoom += event.deltaY * 0.0035;
+					state.zoom = Math.max(1.2, Math.min(10, state.zoom));
+				},
+				{ passive: false }
+			);
+
+			canvas.addEventListener("contextmenu", (event) => {
+				event.preventDefault();
+			});
+
+			lightYawEl.addEventListener("input", () => {
+				state.lightYawDeg = Number(lightYawEl.value);
+				lightYawValueEl.textContent = state.lightYawDeg + "\u00B0";
+			});
+
+			lightPitchEl.addEventListener("input", () => {
+				state.lightPitchDeg = Number(lightPitchEl.value);
+				lightPitchValueEl.textContent = state.lightPitchDeg + "\u00B0";
+			});
+
+			shadingSelectEl.addEventListener("change", () => {
+				state.shadingMode = shadingSelectEl.value;
+			});
+
+			showLightEl.addEventListener("change", () => {
+				state.showLight = showLightEl.checked;
+			});
+
+			showVertexNormalsEl.addEventListener("change", () => {
+				state.showVertexNormals = showVertexNormalsEl.checked;
+			});
+
+			showFaceNormalsEl.addEventListener("change", () => {
+				state.showFaceNormals = showFaceNormalsEl.checked;
+			});
+
+			objectSelectEl.addEventListener("change", async () => {
+				state.currentObject = objectSelectEl.value;
+				await loadModel(state.currentObject);
+			});
+
+			const program = createProgram(gl, vertexShaderSource, fragmentShaderSource);
+			const lineProgram = createProgram(gl, lineVertexShaderSource, lineFragmentShaderSource);
+			const loc = {
+				aPosition: gl.getAttribLocation(program, "aPosition"),
+				aNormal: gl.getAttribLocation(program, "aNormal"),
+				aTriColor: gl.getAttribLocation(program, "aTriColor"),
+				uModel: gl.getUniformLocation(program, "uModel"),
+				uView: gl.getUniformLocation(program, "uView"),
+				uProj: gl.getUniformLocation(program, "uProj"),
+				uLightDir: gl.getUniformLocation(program, "uLightDir"),
+				uColor: gl.getUniformLocation(program, "uColor"),
+				uShadingMode: gl.getUniformLocation(program, "uShadingMode")
+			};
+			const lineLoc = {
+				aPosition: gl.getAttribLocation(lineProgram, "aPosition"),
+				uModel: gl.getUniformLocation(lineProgram, "uModel"),
+				uView: gl.getUniformLocation(lineProgram, "uView"),
+				uProj: gl.getUniformLocation(lineProgram, "uProj"),
+				uLineColor: gl.getUniformLocation(lineProgram, "uLineColor")
+			};
+
+			const matModel = new Float32Array(16);
+			const matView = new Float32Array(16);
+			const matProj = new Float32Array(16);
+			const matRotX = new Float32Array(16);
+			const matTemp = new Float32Array(16);
+			const matTranslate = new Float32Array(16);
+
+			mat4Identity(state.modelRotation);
+			state.lightGizmoBuffer = gl.createBuffer();
+			lightYawValueEl.textContent = state.lightYawDeg + "\u00B0";
+			lightPitchValueEl.textContent = state.lightPitchDeg + "\u00B0";
+
+			function setStatus(text) {
+				statusEl.textContent = text;
+			}
+
+			function releaseBuffer(buffer) {
+				if (buffer) {
+					gl.deleteBuffer(buffer);
+				}
+			}
+
+			function setObjectOptions(objFiles) {
+				state.availableObjects = objFiles;
+				objectSelectEl.innerHTML = "";
+				for (const objFile of objFiles) {
+					const option = document.createElement("option");
+					option.value = objFile;
+					option.textContent = objFile;
+					if (objFile === state.currentObject) {
+						option.selected = true;
+					}
+					objectSelectEl.appendChild(option);
+				}
+			}
+
+			async function getObjFiles() {
+				try {
+					const response = await fetch("./3D-objects/");
+					if (!response.ok) {
+						throw new Error("Unable to list 3D-objects folder");
+					}
+					const html = await response.text();
+					const parser = new DOMParser();
+					const doc = parser.parseFromString(html, "text/html");
+					const objSet = new Set();
+					for (const anchor of doc.querySelectorAll("a[href]")) {
+						const href = anchor.getAttribute("href") || "";
+						const cleanHref = href.split("?")[0].split("#")[0];
+						if (!cleanHref.toLowerCase().endsWith(".obj")) {
+							continue;
+						}
+						const fileName = decodeURIComponent(cleanHref.split("/").pop());
+						if (fileName) {
+							objSet.add(fileName);
+						}
+					}
+					const discovered = Array.from(objSet).sort((a, b) => a.localeCompare(b));
+					if (discovered.length > 0) {
+						return discovered;
+					}
+				} catch (_err) {
+					// Fall back when server does not expose directory listings.
+				}
+
+				return [...fallbackObjFiles];
+			}
+
+			async function loadModel(fileName) {
+				setStatus("Loading " + fileName + "...");
+				const response = await fetch("./3D-objects/" + encodeURIComponent(fileName));
+				if (!response.ok) {
+					throw new Error("Failed to load " + fileName + " (" + response.status + ")");
+				}
+
+				const objText = await response.text();
+				const mesh = parseOBJ(objText);
+				normalizeModel(mesh.positions);
+
+				releaseBuffer(state.positionBuffer);
+				releaseBuffer(state.normalBuffer);
+				releaseBuffer(state.triColorBuffer);
+				releaseBuffer(state.vertexNormalLineBuffer);
+				releaseBuffer(state.faceNormalLineBuffer);
+
+				state.vertexCount = mesh.positions.length / 3;
+				state.positionBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW);
+
+				state.normalBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, state.normalBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, mesh.normals, gl.STATIC_DRAW);
+
+				const triColors = buildTriangleColors(mesh.positions);
+				state.triColorBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, state.triColorBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, triColors, gl.STATIC_DRAW);
+
+				const vertexNormalLineVertices = buildNormalLineVertices(mesh.positions, mesh.normals, 0.08);
+				state.vertexNormalLineCount = vertexNormalLineVertices.length / 3;
+				state.vertexNormalLineBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, state.vertexNormalLineBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, vertexNormalLineVertices, gl.STATIC_DRAW);
+
+				const faceNormalLineVertices = buildFaceNormalLineVertices(mesh.positions, 0.12);
+				state.faceNormalLineCount = faceNormalLineVertices.length / 3;
+				state.faceNormalLineBuffer = gl.createBuffer();
+				gl.bindBuffer(gl.ARRAY_BUFFER, state.faceNormalLineBuffer);
+				gl.bufferData(gl.ARRAY_BUFFER, faceNormalLineVertices, gl.STATIC_DRAW);
+
+				setStatus("Loaded " + fileName + " (" + state.vertexCount + " vertices).");
+			}
+
+			async function initModel() {
+				const objFiles = await getObjFiles();
+				if (objFiles.length === 0) {
+					throw new Error("No .obj files found in 3D-objects folder.");
+				}
+				if (!objFiles.includes(state.currentObject)) {
+					state.currentObject = objFiles[0];
+				}
+				mat4Identity(state.modelRotation);
+				setObjectOptions(objFiles);
+				await loadModel(state.currentObject);
+			}
+
+			function render() {
+				resizeCanvas();
+
+				gl.enable(gl.DEPTH_TEST);
+				gl.clearColor(0.05, 0.08, 0.14, 1);
+				gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+				if (state.vertexCount > 0) {
+					gl.useProgram(program);
+
+					matModel.set(state.modelRotation);
+
+					mat4Translate(matTranslate, 0, 0, -state.zoom);
+					matView.set(matTranslate);
+
+					const aspect = canvas.width / Math.max(canvas.height, 1);
+					mat4Perspective(matProj, Math.PI / 4, aspect, 0.1, 100);
+
+					gl.uniformMatrix4fv(loc.uModel, false, matModel);
+					gl.uniformMatrix4fv(loc.uView, false, matView);
+					gl.uniformMatrix4fv(loc.uProj, false, matProj);
+
+					const lightYawRad = (state.lightYawDeg * Math.PI) / 180;
+					const lightPitchRad = (state.lightPitchDeg * Math.PI) / 180;
+					const cosPitch = Math.cos(lightPitchRad);
+					const lightX = Math.sin(lightYawRad) * cosPitch;
+					const lightY = Math.sin(lightPitchRad);
+					const lightZ = Math.cos(lightYawRad) * cosPitch;
+					gl.uniform3f(loc.uLightDir, lightX, lightY, lightZ);
+					gl.uniform3f(loc.uColor, 0.79, 0.9, 1.0);
+					gl.uniform1f(
+						loc.uShadingMode,
+						state.shadingMode === "lit" ? 1 : state.shadingMode === "triangle" ? 2 : 0
+					);
+
+					gl.bindBuffer(gl.ARRAY_BUFFER, state.positionBuffer);
+					gl.enableVertexAttribArray(loc.aPosition);
+					gl.vertexAttribPointer(loc.aPosition, 3, gl.FLOAT, false, 0, 0);
+
+					gl.bindBuffer(gl.ARRAY_BUFFER, state.normalBuffer);
+					gl.enableVertexAttribArray(loc.aNormal);
+					gl.vertexAttribPointer(loc.aNormal, 3, gl.FLOAT, false, 0, 0);
+
+					gl.bindBuffer(gl.ARRAY_BUFFER, state.triColorBuffer);
+					gl.enableVertexAttribArray(loc.aTriColor);
+					gl.vertexAttribPointer(loc.aTriColor, 3, gl.FLOAT, false, 0, 0);
+
+					gl.drawArrays(gl.TRIANGLES, 0, state.vertexCount);
+
+					if (state.showVertexNormals && state.vertexNormalLineCount > 0) {
+						gl.useProgram(lineProgram);
+						gl.uniformMatrix4fv(lineLoc.uModel, false, matModel);
+						gl.uniformMatrix4fv(lineLoc.uView, false, matView);
+						gl.uniformMatrix4fv(lineLoc.uProj, false, matProj);
+						gl.uniform3f(lineLoc.uLineColor, 1.0, 0.62, 0.2);
+
+						gl.bindBuffer(gl.ARRAY_BUFFER, state.vertexNormalLineBuffer);
+						gl.enableVertexAttribArray(lineLoc.aPosition);
+						gl.vertexAttribPointer(lineLoc.aPosition, 3, gl.FLOAT, false, 0, 0);
+						gl.drawArrays(gl.LINES, 0, state.vertexNormalLineCount);
+					}
+
+					if (state.showFaceNormals && state.faceNormalLineCount > 0) {
+						gl.useProgram(lineProgram);
+						gl.uniformMatrix4fv(lineLoc.uModel, false, matModel);
+						gl.uniformMatrix4fv(lineLoc.uView, false, matView);
+						gl.uniformMatrix4fv(lineLoc.uProj, false, matProj);
+						gl.uniform3f(lineLoc.uLineColor, 0.98, 0.35, 0.32);
+
+						gl.bindBuffer(gl.ARRAY_BUFFER, state.faceNormalLineBuffer);
+						gl.enableVertexAttribArray(lineLoc.aPosition);
+						gl.vertexAttribPointer(lineLoc.aPosition, 3, gl.FLOAT, false, 0, 0);
+						gl.drawArrays(gl.LINES, 0, state.faceNormalLineCount);
+					}
+
+					if (state.showLight) {
+						const lightGizmoVerts = buildLightGizmoVertices([lightX, lightY, lightZ]);
+						state.lightGizmoCount = lightGizmoVerts.length / 3;
+
+						gl.useProgram(lineProgram);
+						gl.uniformMatrix4fv(lineLoc.uModel, false, matModel);
+						gl.uniformMatrix4fv(lineLoc.uView, false, matView);
+						gl.uniformMatrix4fv(lineLoc.uProj, false, matProj);
+						gl.uniform3f(lineLoc.uLineColor, 0.45, 0.95, 0.98);
+
+						gl.bindBuffer(gl.ARRAY_BUFFER, state.lightGizmoBuffer);
+						gl.bufferData(gl.ARRAY_BUFFER, lightGizmoVerts, gl.DYNAMIC_DRAW);
+						gl.enableVertexAttribArray(lineLoc.aPosition);
+						gl.vertexAttribPointer(lineLoc.aPosition, 3, gl.FLOAT, false, 0, 0);
+						gl.drawArrays(gl.LINES, 0, state.lightGizmoCount);
+					}
+				}
+
+				requestAnimationFrame(render);
+			}
+
+			initModel()
+				.catch((err) => {
+					console.error(err);
+					setStatus("Error: " + err.message);
+				})
+				.finally(() => {
+					requestAnimationFrame(render);
+				});
+		</script>
+	</body>
+</html>
