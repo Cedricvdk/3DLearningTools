@@ -1,0 +1,712 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Rasterization Demo</title>
+	<style>
+		:root {
+			--bg-0: #081325;
+			--bg-1: #122b47;
+			--panel: rgba(8, 18, 35, 0.78);
+			--line: rgba(255, 255, 255, 0.15);
+			--text: #eaf1ff;
+			--muted: #a9bcd7;
+			--accent: #ff9f5a;
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		html,
+		body {
+			margin: 0;
+			width: 100%;
+			min-height: 100%;
+			color: var(--text);
+			font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+			background:
+				radial-gradient(1200px 680px at 12% 8%, rgba(57, 112, 187, 0.27), transparent 64%),
+				radial-gradient(1000px 520px at 90% 96%, rgba(255, 148, 66, 0.2), transparent 70%),
+				linear-gradient(150deg, var(--bg-0), var(--bg-1));
+		}
+
+		.page {
+			width: min(1400px, 96vw);
+			margin: 16px auto;
+			display: grid;
+			gap: 14px;
+		}
+
+		.topbar {
+			display: grid;
+			gap: 10px;
+			padding: 12px 14px;
+			border: 1px solid var(--line);
+			border-radius: 14px;
+			background: var(--panel);
+			backdrop-filter: blur(4px);
+		}
+
+		.title {
+			margin: 0;
+			font-size: clamp(18px, 1.7vw, 24px);
+			letter-spacing: 0.02em;
+		}
+
+		.subtitle {
+			margin: 4px 0 0;
+			color: var(--muted);
+			font-size: 14px;
+		}
+
+		.controls {
+			display: grid;
+			grid-template-columns: repeat(7, minmax(130px, 1fr));
+			gap: 8px 10px;
+			align-items: end;
+		}
+
+		.control {
+			display: grid;
+			gap: 6px;
+			font-size: 13px;
+		}
+
+		.control label {
+			color: var(--muted);
+		}
+
+		.control select,
+		.control input[type="range"] {
+			width: 100%;
+		}
+
+		select,
+		input[type="range"] {
+			border-radius: 8px;
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			background: rgba(8, 18, 35, 0.8);
+			color: var(--text);
+			padding: 6px 8px;
+		}
+
+		input[type="checkbox"] {
+			margin: 0;
+			accent-color: var(--accent);
+		}
+
+		.toggle {
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			height: 34px;
+			padding: 0 8px;
+			border: 1px solid rgba(255, 255, 255, 0.18);
+			border-radius: 8px;
+			background: rgba(8, 18, 35, 0.6);
+			user-select: none;
+		}
+
+		.viewport {
+			min-height: min(72vh, 780px);
+		}
+
+		.panel {
+			position: relative;
+			border: 1px solid var(--line);
+			border-radius: 16px;
+			overflow: hidden;
+			background: var(--panel);
+		}
+
+		canvas {
+			width: 100%;
+			height: 100%;
+			display: block;
+			background: rgba(5, 11, 22, 0.65);
+		}
+
+		#sourceCanvas {
+			cursor: grab;
+			touch-action: none;
+		}
+
+		#sourceCanvas.dragging {
+			cursor: grabbing;
+		}
+
+		.panel-label {
+			position: absolute;
+			left: 12px;
+			top: 12px;
+			z-index: 1;
+			padding: 6px 10px;
+			border-radius: 999px;
+			border: 1px solid rgba(255, 255, 255, 0.16);
+			text-transform: uppercase;
+			letter-spacing: 0.06em;
+			font-size: 12px;
+			background: rgba(8, 18, 35, 0.7);
+		}
+
+		.hint {
+			position: absolute;
+			left: 12px;
+			bottom: 12px;
+			margin: 0;
+			padding: 7px 10px;
+			border-radius: 9px;
+			border: 1px solid rgba(255, 255, 255, 0.12);
+			background: rgba(8, 18, 35, 0.72);
+			color: var(--muted);
+			font-size: 12px;
+		}
+
+		@media (max-width: 1100px) {
+			.controls {
+				grid-template-columns: repeat(2, minmax(180px, 1fr));
+			}
+
+			.panel {
+				min-height: 380px;
+			}
+		}
+	</style>
+</head>
+<body>
+<main class="page">
+	<section class="topbar">
+		<div>
+			<h1 class="title">Rasterization Demo</h1>
+			<p class="subtitle">Single view: blend from projected triangles to rasterized output.</p>
+		</div>
+
+		<div class="controls" aria-label="Rasterization controls">
+			<div class="control" style="grid-column: span 2;">
+				<label for="objectSelect">3D object</label>
+				<select id="objectSelect"></select>
+			</div>
+
+			<label class="toggle"><input id="toggleGrid" type="checkbox" checked>Show grid</label>
+			<label class="toggle"><input id="toggleCenters" type="checkbox">Show center of grid</label>
+			<div class="control" style="grid-column: span 2;">
+				<label for="blendSlider">Blend 3D to raster <span id="blendValue">60%</span></label>
+				<input id="blendSlider" type="range" min="0" max="100" step="1" value="60">
+			</div>
+
+			<div class="control">
+				<label for="resolutionSlider">Grid resolution <span id="resolutionValue">44</span></label>
+				<input id="resolutionSlider" type="range" min="8" max="140" step="2" value="44">
+			</div>
+		</div>
+	</section>
+
+	<section class="viewport">
+		<article class="panel">
+			<span class="panel-label">Projection and Rasterization</span>
+			<canvas id="sourceCanvas" aria-label="Projected triangles"></canvas>
+			<p class="hint">Drag to rotate. Blend slider fades between continuous triangles and raster cells.</p>
+		</article>
+	</section>
+</main>
+
+<script>
+const OBJECT_FILES = [
+	"cube.obj",
+	"geovanni.obj",
+	"high poly suzanne.obj",
+	"low poly suzanne.obj"
+];
+const OBJECT_BASE_PATH = "../3D-canvas/3D-objects/";
+
+const sourceCanvas = document.getElementById("sourceCanvas");
+const sourceCtx = sourceCanvas.getContext("2d");
+
+const objectSelect = document.getElementById("objectSelect");
+const toggleGrid = document.getElementById("toggleGrid");
+const toggleCenters = document.getElementById("toggleCenters");
+const blendSlider = document.getElementById("blendSlider");
+const blendValue = document.getElementById("blendValue");
+const resolutionSlider = document.getElementById("resolutionSlider");
+const resolutionValue = document.getElementById("resolutionValue");
+
+const state = {
+	mesh: null,
+	yaw: 0.7,
+	pitch: -0.35,
+	scale: 1,
+	dragging: false,
+	lastX: 0,
+	lastY: 0
+};
+
+function clamp(value, min, max) {
+	return Math.max(min, Math.min(max, value));
+}
+
+function toRgbFromHsl(h, s, l) {
+	const c = (1 - Math.abs(2 * l - 1)) * s;
+	const hp = h / 60;
+	const x = c * (1 - Math.abs((hp % 2) - 1));
+
+	let r = 0;
+	let g = 0;
+	let b = 0;
+
+	if (hp >= 0 && hp < 1) {
+		r = c;
+		g = x;
+	} else if (hp < 2) {
+		r = x;
+		g = c;
+	} else if (hp < 3) {
+		g = c;
+		b = x;
+	} else if (hp < 4) {
+		g = x;
+		b = c;
+	} else if (hp < 5) {
+		r = x;
+		b = c;
+	} else {
+		r = c;
+		b = x;
+	}
+
+	const m = l - c / 2;
+	return {
+		r: Math.round((r + m) * 255),
+		g: Math.round((g + m) * 255),
+		b: Math.round((b + m) * 255)
+	};
+}
+
+function colorForTriangle(index) {
+	const hue = (index * 47) % 360;
+	const rgb = toRgbFromHsl(hue, 0.78, 0.58);
+	return `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+}
+
+function parseOBJ(text) {
+	const positions = [];
+	const triangles = [];
+	const lines = text.split(/\r?\n/);
+
+	for (const rawLine of lines) {
+		const line = rawLine.trim();
+		if (!line || line.startsWith("#")) {
+			continue;
+		}
+
+		const parts = line.split(/\s+/);
+		if (parts[0] === "v") {
+			positions.push([
+				Number.parseFloat(parts[1]),
+				Number.parseFloat(parts[2]),
+				Number.parseFloat(parts[3])
+			]);
+			continue;
+		}
+
+		if (parts[0] !== "f") {
+			continue;
+		}
+
+		const face = parts.slice(1).map((token) => {
+			const v = token.split("/")[0];
+			return Number.parseInt(v, 10) - 1;
+		});
+
+		for (let i = 1; i < face.length - 1; i += 1) {
+			triangles.push([face[0], face[i], face[i + 1]]);
+		}
+	}
+
+	if (!positions.length || !triangles.length) {
+		throw new Error("OBJ has no usable triangles");
+	}
+
+	const minV = [Infinity, Infinity, Infinity];
+	const maxV = [-Infinity, -Infinity, -Infinity];
+
+	for (const p of positions) {
+		minV[0] = Math.min(minV[0], p[0]);
+		minV[1] = Math.min(minV[1], p[1]);
+		minV[2] = Math.min(minV[2], p[2]);
+		maxV[0] = Math.max(maxV[0], p[0]);
+		maxV[1] = Math.max(maxV[1], p[1]);
+		maxV[2] = Math.max(maxV[2], p[2]);
+	}
+
+	const center = [
+		(minV[0] + maxV[0]) * 0.5,
+		(minV[1] + maxV[1]) * 0.5,
+		(minV[2] + maxV[2]) * 0.5
+	];
+	const span = Math.max(maxV[0] - minV[0], maxV[1] - minV[1], maxV[2] - minV[2]) || 1;
+	const normScale = 2 / span;
+
+	const normalizedPositions = positions.map((p) => [
+		(p[0] - center[0]) * normScale,
+		(p[1] - center[1]) * normScale,
+		(p[2] - center[2]) * normScale
+	]);
+
+	return {
+		positions: normalizedPositions,
+		triangles
+	};
+}
+
+function rotatePoint(point, yaw, pitch) {
+	const cy = Math.cos(yaw);
+	const sy = Math.sin(yaw);
+	const cp = Math.cos(pitch);
+	const sp = Math.sin(pitch);
+
+	const x1 = point[0] * cy + point[2] * sy;
+	const y1 = point[1];
+	const z1 = -point[0] * sy + point[2] * cy;
+
+	return [
+		x1,
+		y1 * cp - z1 * sp,
+		y1 * sp + z1 * cp
+	];
+}
+
+function projectPointToArea(point, area, fov = 1.9) {
+	const cameraDistance = 3.3;
+	const zCam = point[2] + cameraDistance;
+	if (zCam <= 0.1) {
+		return null;
+	}
+
+	const xNdc = (point[0] / zCam) * fov;
+	const yNdc = (point[1] / zCam) * fov;
+
+	return {
+		x: area.x + area.w * (0.5 + xNdc * 0.5),
+		y: area.y + area.h * (0.5 - yNdc * 0.5),
+		z: zCam
+	};
+}
+
+function getDrawArea(width, height) {
+	const padding = 32;
+	const size = Math.max(80, Math.min(width, height) - padding * 2);
+	return {
+		x: (width - size) * 0.5,
+		y: (height - size) * 0.5,
+		w: size,
+		h: size
+	};
+}
+
+function buildScreenTriangles(width, height) {
+	if (!state.mesh) {
+		return [];
+	}
+
+	const area = getDrawArea(width, height);
+	const rotated = state.mesh.positions.map((p) => rotatePoint([
+		p[0] * state.scale,
+		p[1] * state.scale,
+		p[2] * state.scale
+	], state.yaw, state.pitch));
+
+	const tris = [];
+	for (let i = 0; i < state.mesh.triangles.length; i += 1) {
+		const tri = state.mesh.triangles[i];
+		const a = projectPointToArea(rotated[tri[0]], area);
+		const b = projectPointToArea(rotated[tri[1]], area);
+		const c = projectPointToArea(rotated[tri[2]], area);
+		if (!a || !b || !c) {
+			continue;
+		}
+
+		const depth = (a.z + b.z + c.z) / 3;
+		tris.push({
+			a,
+			b,
+			c,
+			depth,
+			color: colorForTriangle(i)
+		});
+	}
+
+	tris.sort((l, r) => r.depth - l.depth);
+	return tris;
+}
+
+function drawBackground(ctx, width, height, topColor, bottomColor) {
+	const gradient = ctx.createLinearGradient(0, 0, 0, height);
+	gradient.addColorStop(0, topColor);
+	gradient.addColorStop(1, bottomColor);
+	ctx.fillStyle = gradient;
+	ctx.fillRect(0, 0, width, height);
+}
+
+function drawProjectedPanel() {
+	const width = sourceCanvas.clientWidth;
+	const height = sourceCanvas.clientHeight;
+	drawBackground(sourceCtx, width, height, "#0b1b31", "#122e4c");
+
+	const area = getDrawArea(width, height);
+	sourceCtx.strokeStyle = "rgba(136, 178, 221, 0.35)";
+	sourceCtx.lineWidth = 1.2;
+	sourceCtx.strokeRect(area.x, area.y, area.w, area.h);
+
+	const tris = buildScreenTriangles(width, height);
+	for (const tri of tris) {
+		sourceCtx.beginPath();
+		sourceCtx.moveTo(tri.a.x, tri.a.y);
+		sourceCtx.lineTo(tri.b.x, tri.b.y);
+		sourceCtx.lineTo(tri.c.x, tri.c.y);
+		sourceCtx.closePath();
+		sourceCtx.fillStyle = tri.color;
+		sourceCtx.fill();
+		sourceCtx.strokeStyle = "rgba(10, 18, 32, 0.5)";
+		sourceCtx.lineWidth = 0.9;
+		sourceCtx.stroke();
+	}
+
+	return { area, tris };
+}
+
+function edgeFunction(a, b, p) {
+	return (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x);
+}
+
+function rasterizeToCells(tris, gridResolution, area) {
+	const cells = [];
+	const cellW = area.w / gridResolution;
+	const cellH = area.h / gridResolution;
+
+	for (let gy = 0; gy < gridResolution; gy += 1) {
+		for (let gx = 0; gx < gridResolution; gx += 1) {
+			const center = {
+				x: area.x + gx * cellW + cellW * 0.5,
+				y: area.y + gy * cellH + cellH * 0.5
+			};
+
+			let best = null;
+			let bestDepth = Infinity;
+
+			for (const tri of tris) {
+				const w0 = edgeFunction(tri.b, tri.c, center);
+				const w1 = edgeFunction(tri.c, tri.a, center);
+				const w2 = edgeFunction(tri.a, tri.b, center);
+				const hasNeg = w0 < 0 || w1 < 0 || w2 < 0;
+				const hasPos = w0 > 0 || w1 > 0 || w2 > 0;
+				if (hasNeg && hasPos) {
+					continue;
+				}
+
+				if (tri.depth < bestDepth) {
+					bestDepth = tri.depth;
+					best = tri.color;
+				}
+			}
+
+			cells.push({ gx, gy, color: best });
+		}
+	}
+
+	return { cells, cellW, cellH };
+}
+
+function drawGridOverlay(ctx, area, resolution) {
+	const cellW = area.w / resolution;
+	const cellH = area.h / resolution;
+	ctx.strokeStyle = "rgba(166, 200, 233, 0.35)";
+	ctx.lineWidth = 0.8;
+	for (let i = 0; i <= resolution; i += 1) {
+		const x = area.x + i * cellW;
+		const y = area.y + i * cellH;
+		ctx.beginPath();
+		ctx.moveTo(x, area.y);
+		ctx.lineTo(x, area.y + area.h);
+		ctx.stroke();
+		ctx.beginPath();
+		ctx.moveTo(area.x, y);
+		ctx.lineTo(area.x + area.w, y);
+		ctx.stroke();
+	}
+}
+
+function drawCentersOverlay(ctx, area, resolution) {
+	const cellW = area.w / resolution;
+	const cellH = area.h / resolution;
+	ctx.fillStyle = "rgba(235, 244, 255, 0.75)";
+	for (let gy = 0; gy < resolution; gy += 1) {
+		for (let gx = 0; gx < resolution; gx += 1) {
+			const cx = area.x + gx * cellW + cellW * 0.5;
+			const cy = area.y + gy * cellH + cellH * 0.5;
+			ctx.fillRect(cx - 1, cy - 1, 2, 2);
+		}
+	}
+}
+
+function drawRasterBlend(area, tris, resolution, alpha) {
+	if (alpha <= 0) {
+		return;
+	}
+
+	const rasterData = rasterizeToCells(tris, resolution, area);
+	sourceCtx.save();
+	sourceCtx.globalAlpha = alpha;
+	// Paint the raster layer background so 100% blend fully replaces projected triangles.
+	sourceCtx.fillStyle = "#17375a";
+	sourceCtx.fillRect(area.x, area.y, area.w, area.h);
+
+	for (const cell of rasterData.cells) {
+		if (!cell.color) {
+			continue;
+		}
+
+		const x = area.x + cell.gx * rasterData.cellW;
+		const y = area.y + cell.gy * rasterData.cellH;
+		sourceCtx.fillStyle = cell.color;
+		sourceCtx.fillRect(x, y, rasterData.cellW, rasterData.cellH);
+	}
+	sourceCtx.restore();
+}
+
+function setupCanvasSize(canvas, ctx) {
+	const dpr = window.devicePixelRatio || 1;
+	const width = Math.max(1, Math.floor(canvas.clientWidth * dpr));
+	const height = Math.max(1, Math.floor(canvas.clientHeight * dpr));
+
+	if (canvas.width !== width || canvas.height !== height) {
+		canvas.width = width;
+		canvas.height = height;
+	}
+
+	ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function render() {
+	setupCanvasSize(sourceCanvas, sourceCtx);
+	const projected = drawProjectedPanel();
+	const resolution = Number.parseInt(resolutionSlider.value, 10);
+	const blend = Number.parseInt(blendSlider.value, 10) / 100;
+	resolutionValue.textContent = String(resolution);
+	blendValue.textContent = `${Math.round(blend * 100)}%`;
+
+	if (projected && projected.tris.length) {
+		drawRasterBlend(projected.area, projected.tris, resolution, blend);
+		if (toggleGrid.checked) {
+			drawGridOverlay(sourceCtx, projected.area, resolution);
+		}
+		if (toggleCenters.checked) {
+			drawCentersOverlay(sourceCtx, projected.area, resolution);
+		}
+
+		sourceCtx.strokeStyle = "rgba(113, 181, 255, 0.95)";
+		sourceCtx.lineWidth = 1.8;
+		sourceCtx.strokeRect(projected.area.x, projected.area.y, projected.area.w, projected.area.h);
+	}
+
+	requestAnimationFrame(render);
+}
+
+async function loadObject(fileName) {
+	const url = OBJECT_BASE_PATH + encodeURIComponent(fileName);
+	const response = await fetch(url);
+	if (!response.ok) {
+		throw new Error(`Failed to fetch ${fileName}`);
+	}
+
+	const text = await response.text();
+	state.mesh = parseOBJ(text);
+}
+
+function setupObjectDropdown() {
+	objectSelect.innerHTML = "";
+	for (const file of OBJECT_FILES) {
+		const option = document.createElement("option");
+		option.value = file;
+		option.textContent = file;
+		objectSelect.appendChild(option);
+	}
+
+	objectSelect.value = "cube.obj";
+	objectSelect.addEventListener("change", async () => {
+		try {
+			await loadObject(objectSelect.value);
+		} catch (error) {
+			console.error(error);
+		}
+	});
+}
+
+sourceCanvas.addEventListener("pointerdown", (event) => {
+	state.dragging = true;
+	state.lastX = event.clientX;
+	state.lastY = event.clientY;
+	sourceCanvas.classList.add("dragging");
+	sourceCanvas.setPointerCapture(event.pointerId);
+});
+
+sourceCanvas.addEventListener("pointermove", (event) => {
+	if (!state.dragging) {
+		return;
+	}
+
+	const dx = event.clientX - state.lastX;
+	const dy = event.clientY - state.lastY;
+	state.yaw -= dx * 0.007;
+	state.pitch -= dy * 0.007;
+	state.pitch = clamp(state.pitch, -1.45, 1.45);
+	state.lastX = event.clientX;
+	state.lastY = event.clientY;
+});
+
+function stopDrag(event) {
+	if (!state.dragging) {
+		return;
+	}
+
+	state.dragging = false;
+	sourceCanvas.classList.remove("dragging");
+	if (sourceCanvas.hasPointerCapture(event.pointerId)) {
+		sourceCanvas.releasePointerCapture(event.pointerId);
+	}
+}
+
+sourceCanvas.addEventListener("pointerup", stopDrag);
+sourceCanvas.addEventListener("pointercancel", stopDrag);
+
+sourceCanvas.addEventListener("wheel", (event) => {
+	event.preventDefault();
+	state.scale = clamp(state.scale - event.deltaY * 0.0008, 0.45, 2.8);
+}, { passive: false });
+
+for (const el of [toggleGrid, toggleCenters, resolutionSlider, blendSlider]) {
+	el.addEventListener("input", () => {
+		resolutionValue.textContent = resolutionSlider.value;
+		blendValue.textContent = `${blendSlider.value}%`;
+	});
+}
+
+window.addEventListener("resize", () => {
+	setupCanvasSize(sourceCanvas, sourceCtx);
+});
+
+async function init() {
+	setupObjectDropdown();
+	await loadObject(objectSelect.value);
+	resolutionValue.textContent = resolutionSlider.value;
+	blendValue.textContent = `${blendSlider.value}%`;
+	requestAnimationFrame(render);
+}
+
+init().catch((error) => {
+	console.error(error);
+});
+</script>
+</body>
+</html>
