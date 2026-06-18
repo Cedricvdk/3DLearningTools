@@ -239,7 +239,13 @@ const state = {
 	scale: 1,
 	dragging: false,
 	lastX: 0,
-	lastY: 0
+	lastY: 0,
+	renderPending: false,
+	rasterBuffers: {
+		depth: null,
+		color: null,
+		size: 0
+	}
 };
 
 function clamp(value, min, max) {
@@ -292,6 +298,7 @@ function colorForTriangle(index) {
 function parseOBJ(text) {
 	const positions = [];
 	const triangles = [];
+	const triangleColors = [];
 	const lines = text.split(/\r?\n/);
 
 	for (const rawLine of lines) {
@@ -320,7 +327,7 @@ function parseOBJ(text) {
 		});
 
 		for (let i = 1; i < face.length - 1; i += 1) {
-			triangles.push([face[0], face[i], face[i + 1]]);
+				triangles.push([face[0], face[i], face[i + 1]]);
 		}
 	}
 
@@ -354,9 +361,14 @@ function parseOBJ(text) {
 		(p[2] - center[2]) * normScale
 	]);
 
+	for (let i = 0; i < triangles.length; i += 1) {
+		triangleColors.push(colorForTriangle(i));
+	}
+
 	return {
 		positions: normalizedPositions,
-		triangles
+		triangles,
+		triangleColors
 	};
 }
 
@@ -433,7 +445,7 @@ function buildScreenTriangles(width, height) {
 			b,
 			c,
 			depth,
-			color: colorForTriangle(i)
+			color: state.mesh.triangleColors[i]
 		});
 	}
 
@@ -481,21 +493,41 @@ function edgeFunction(a, b, p) {
 }
 
 function rasterizeToCells(tris, gridResolution, area) {
-	const cells = [];
+	const totalCells = gridResolution * gridResolution;
+	if (!state.rasterBuffers.depth || state.rasterBuffers.size !== totalCells) {
+		state.rasterBuffers.depth = new Float32Array(totalCells);
+		state.rasterBuffers.color = new Array(totalCells);
+		state.rasterBuffers.size = totalCells;
+	}
+
+	const depthBuffer = state.rasterBuffers.depth;
+	const colorBuffer = state.rasterBuffers.color;
+	depthBuffer.fill(Infinity);
+	colorBuffer.fill(null);
+
 	const cellW = area.w / gridResolution;
 	const cellH = area.h / gridResolution;
+	const invCellW = 1 / cellW;
+	const invCellH = 1 / cellH;
 
-	for (let gy = 0; gy < gridResolution; gy += 1) {
-		for (let gx = 0; gx < gridResolution; gx += 1) {
-			const center = {
-				x: area.x + gx * cellW + cellW * 0.5,
-				y: area.y + gy * cellH + cellH * 0.5
-			};
+	for (const tri of tris) {
+		const minX = Math.min(tri.a.x, tri.b.x, tri.c.x);
+		const maxX = Math.max(tri.a.x, tri.b.x, tri.c.x);
+		const minY = Math.min(tri.a.y, tri.b.y, tri.c.y);
+		const maxY = Math.max(tri.a.y, tri.b.y, tri.c.y);
 
-			let best = null;
-			let bestDepth = Infinity;
+		const startGX = clamp(Math.floor((minX - area.x) * invCellW), 0, gridResolution - 1);
+		const endGX = clamp(Math.floor((maxX - area.x) * invCellW), 0, gridResolution - 1);
+		const startGY = clamp(Math.floor((minY - area.y) * invCellH), 0, gridResolution - 1);
+		const endGY = clamp(Math.floor((maxY - area.y) * invCellH), 0, gridResolution - 1);
 
-			for (const tri of tris) {
+		for (let gy = startGY; gy <= endGY; gy += 1) {
+			for (let gx = startGX; gx <= endGX; gx += 1) {
+				const center = {
+					x: area.x + gx * cellW + cellW * 0.5,
+					y: area.y + gy * cellH + cellH * 0.5
+				};
+
 				const w0 = edgeFunction(tri.b, tri.c, center);
 				const w1 = edgeFunction(tri.c, tri.a, center);
 				const w2 = edgeFunction(tri.a, tri.b, center);
@@ -505,17 +537,16 @@ function rasterizeToCells(tris, gridResolution, area) {
 					continue;
 				}
 
-				if (tri.depth < bestDepth) {
-					bestDepth = tri.depth;
-					best = tri.color;
+				const idx = gy * gridResolution + gx;
+				if (tri.depth < depthBuffer[idx]) {
+					depthBuffer[idx] = tri.depth;
+					colorBuffer[idx] = tri.color;
 				}
 			}
-
-			cells.push({ gx, gy, color: best });
 		}
 	}
 
-	return { cells, cellW, cellH };
+	return { colorBuffer, cellW, cellH, gridResolution };
 }
 
 function drawGridOverlay(ctx, area, resolution) {
@@ -562,15 +593,19 @@ function drawRasterBlend(area, tris, resolution, alpha) {
 	sourceCtx.fillStyle = "#17375a";
 	sourceCtx.fillRect(area.x, area.y, area.w, area.h);
 
-	for (const cell of rasterData.cells) {
-		if (!cell.color) {
-			continue;
-		}
+	for (let gy = 0; gy < rasterData.gridResolution; gy += 1) {
+		for (let gx = 0; gx < rasterData.gridResolution; gx += 1) {
+			const idx = gy * rasterData.gridResolution + gx;
+			const color = rasterData.colorBuffer[idx];
+			if (!color) {
+				continue;
+			}
 
-		const x = area.x + cell.gx * rasterData.cellW;
-		const y = area.y + cell.gy * rasterData.cellH;
-		sourceCtx.fillStyle = cell.color;
-		sourceCtx.fillRect(x, y, rasterData.cellW, rasterData.cellH);
+			const x = area.x + gx * rasterData.cellW;
+			const y = area.y + gy * rasterData.cellH;
+			sourceCtx.fillStyle = color;
+			sourceCtx.fillRect(x, y, rasterData.cellW, rasterData.cellH);
+		}
 	}
 	sourceCtx.restore();
 }
@@ -609,8 +644,18 @@ function render() {
 		sourceCtx.lineWidth = 1.8;
 		sourceCtx.strokeRect(projected.area.x, projected.area.y, projected.area.w, projected.area.h);
 	}
+}
 
-	requestAnimationFrame(render);
+function requestRender() {
+	if (state.renderPending) {
+		return;
+	}
+
+	state.renderPending = true;
+	requestAnimationFrame(() => {
+		state.renderPending = false;
+		render();
+	});
 }
 
 async function loadObject(fileName) {
@@ -622,6 +667,7 @@ async function loadObject(fileName) {
 
 	const text = await response.text();
 	state.mesh = parseOBJ(text);
+	requestRender();
 }
 
 function setupObjectDropdown() {
@@ -663,6 +709,7 @@ sourceCanvas.addEventListener("pointermove", (event) => {
 	state.pitch = clamp(state.pitch, -1.45, 1.45);
 	state.lastX = event.clientX;
 	state.lastY = event.clientY;
+	requestRender();
 });
 
 function stopDrag(event) {
@@ -683,17 +730,20 @@ sourceCanvas.addEventListener("pointercancel", stopDrag);
 sourceCanvas.addEventListener("wheel", (event) => {
 	event.preventDefault();
 	state.scale = clamp(state.scale - event.deltaY * 0.0008, 0.45, 2.8);
+	requestRender();
 }, { passive: false });
 
 for (const el of [toggleGrid, toggleCenters, resolutionSlider, blendSlider]) {
 	el.addEventListener("input", () => {
 		resolutionValue.textContent = resolutionSlider.value;
 		blendValue.textContent = `${blendSlider.value}%`;
+		requestRender();
 	});
 }
 
 window.addEventListener("resize", () => {
 	setupCanvasSize(sourceCanvas, sourceCtx);
+	requestRender();
 });
 
 async function init() {
@@ -701,7 +751,7 @@ async function init() {
 	await loadObject(objectSelect.value);
 	resolutionValue.textContent = resolutionSlider.value;
 	blendValue.textContent = `${blendSlider.value}%`;
-	requestAnimationFrame(render);
+	requestRender();
 }
 
 init().catch((error) => {
