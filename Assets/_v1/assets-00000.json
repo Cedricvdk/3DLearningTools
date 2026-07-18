@@ -35,8 +35,8 @@
   "files": [
     {
       "path": "Assets.blend",
-      "size_in_bytes": 121377,
-      "hash": "SHA256:407bb9742274cbc8141a6e7ab893537222cf0236545cc2ecc7da851152bef148",
+      "size_in_bytes": 121319,
+      "hash": "SHA256:28d1ee34c0396773627b2b053ca3bf36398a9efb216e2d5032e88d56cf73bce7",
       "blender_version": "5.2.44"
     }
   ]
