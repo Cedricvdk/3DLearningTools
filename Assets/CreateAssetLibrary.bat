@@ -1,0 +1,1 @@
+"C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b -c asset_listing generate .
