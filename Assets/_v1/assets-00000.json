@@ -1,0 +1,43 @@
+{
+  "asset_count": 1,
+  "file_count": 1,
+  "assets": [
+    {
+      "name": "Geovanni",
+      "id_type": "OBJECT",
+      "files": [
+        "Assets.blend"
+      ],
+      "bl_versions": {
+        "min": "5.2"
+      },
+      "thumbnail": {
+        "url": "Assets_thumbnails/Object/geovanni.webp",
+        "hash": "SHA256:4084903b6a405a3babb8d920b9b8ac9950eee2825bed71c75d7066aede49086d"
+      },
+      "meta": {
+        "catalog_id": "34cd3805-d4c8-4179-9b67-c70e90b41489",
+        "properties": [
+          {
+            "name": "dimensions",
+            "type": "IDP_ARRAY",
+            "value": [
+              0.6992312669754028,
+              0.368315190076828,
+              1.7494902610778809
+            ],
+            "itemtype": "IDP_FLOAT"
+          }
+        ]
+      }
+    }
+  ],
+  "files": [
+    {
+      "path": "Assets.blend",
+      "size_in_bytes": 121377,
+      "hash": "SHA256:407bb9742274cbc8141a6e7ab893537222cf0236545cc2ecc7da851152bef148",
+      "blender_version": "5.2.44"
+    }
+  ]
+}

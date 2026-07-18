@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0.0",
+  "asset_size_bytes": 121377,
+  "asset_count": 1,
+  "file_count": 1,
+  "pages": [
+    {
+      "url": "_v1/assets-00000.json",
+      "hash": "SHA256:7fb0896580dfeab371e69919992f4361622d6202c3a47c13550e43ae98fa07c0"
+    }
+  ],
+  "catalogs": [
+    {
+      "path": "3D Assets",
+      "uuids": [
+        "34cd3805-d4c8-4179-9b67-c70e90b41489"
+      ],
+      "simple_name": "3D Assets"
+    }
+  ]
+}
